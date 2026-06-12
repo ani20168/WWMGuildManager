@@ -1,0 +1,10 @@
+{
+  "hotkey_toggle": "f8",
+  "recognition_delay": 0.25,
+  "refresh_wait": 1.25,
+  "hdr_mode": true,
+  "member_visit": {
+    "filter_level": "",
+    "filter_language": "中文"
+  }
+}
