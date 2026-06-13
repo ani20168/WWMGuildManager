@@ -6,7 +6,12 @@
 - 訂閱 AppController 的 game_found 狀態自動更新
 """
 from __future__ import annotations
+import os
 import customtkinter as ctk
+from PIL import Image
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ICON_PATH = os.path.join(_HERE, "..", "images", "other", "icon.png")
 
 # 顏色常數
 CLR_BG = "#1a1a2e"
@@ -44,9 +49,21 @@ class Sidebar(ctk.CTkFrame):
         title_frame = ctk.CTkFrame(self, fg_color=CLR_BG, corner_radius=0)
         title_frame.pack(fill="x", padx=0, pady=(16, 8))
 
+        # 載入圖示（使用 CTkImage 支援 HiDPI）
+        try:
+            _pil_icon = Image.open(_ICON_PATH)
+            _ctk_icon = ctk.CTkImage(_pil_icon, size=(52, 52))
+            ctk.CTkLabel(
+                title_frame,
+                image=_ctk_icon,
+                text="",
+            ).pack(padx=16, pady=(0, 4))
+        except Exception:
+            pass
+
         ctk.CTkLabel(
             title_frame,
-            text="⚔  WWM",
+            text="WWM",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=CLR_ACCENT,
         ).pack(padx=16, pady=(0, 2))
@@ -89,13 +106,6 @@ class Sidebar(ctk.CTkFrame):
             btn.pack(fill="x", pady=2)
             self._buttons[pid] = btn
 
-        # 底部版本資訊
-        ctk.CTkLabel(
-            self,
-            text="v0.1.0",
-            font=ctk.CTkFont(size=10),
-            text_color=CLR_TEXT_DIM,
-        ).pack(side="bottom", pady=12)
 
     def _handle_click(self, page_id: str) -> None:
         meta = next((m for m in self._pages_meta if m["id"] == page_id), None)

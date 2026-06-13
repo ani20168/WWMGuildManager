@@ -94,6 +94,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     # icon="images/icon.ico",  # 若有 icon 請取消此行註解
+    icon="images/other/icon.ico",
 )
 
 coll = COLLECT(

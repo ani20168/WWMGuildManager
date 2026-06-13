@@ -4,9 +4,13 @@
 切換分頁時僅替換右側內容，不重建視窗。
 """
 from __future__ import annotations
+import os
 import customtkinter as ctk
 
 from ui.sidebar import Sidebar
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ICON_ICO = os.path.join(_HERE, "..", "images", "other", "icon.ico")
 
 CLR_CONTENT_BG = "#0d1117"
 
@@ -27,6 +31,12 @@ class MainWindow(ctk.CTk):
         self.geometry("1000x830")
         self.minsize(800, 710)
         self.configure(fg_color=CLR_CONTENT_BG)
+
+        # 設定視窗圖示
+        try:
+            self.iconbitmap(_ICON_ICO)
+        except Exception:
+            pass
 
         # 防止視窗消失時仍在跑背景執行緒
         self.protocol("WM_DELETE_WINDOW", self._on_close)

@@ -75,11 +75,8 @@ jobs:
             ## 使用說明
             1. 下載並解壓縮 `${{ env.ZIP_NAME }}`
             2. 進入 `WWMGuildManager` 資料夾，執行 `WWMGuildManager.exe`
-            3. **首次啟動**時 EasyOCR 會自動下載 OCR 模型（約 50MB，需要網路）
-            4. `config.json` 位於同資料夾，可自行調整設定
 
             ## 系統需求
             - Windows 10 / 11（64 位元）
-            - 不需安裝 Python
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

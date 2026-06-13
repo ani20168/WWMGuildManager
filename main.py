@@ -12,6 +12,13 @@ WWM Guild Manager — 程式進入點。
 """
 import sys
 import os
+import ctypes
+
+# 告訴 Windows 這是獨立應用程式，工作列才會顯示自訂圖示而非 python.exe 圖示
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("WWMGuildManager.App")
+except Exception:
+    pass
 
 # 確保專案根目錄在 sys.path
 ROOT = os.path.dirname(os.path.abspath(__file__))
