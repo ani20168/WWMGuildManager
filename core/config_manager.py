@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import sys
 from typing import Any
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+# 打包後（sys.frozen=True）：config.json 放在 exe 同層目錄，使用者可直接修改
+# 開發時：config.json 放在專案根目錄
+if getattr(sys, "frozen", False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+CONFIG_PATH = os.path.join(_BASE_DIR, "config.json")
 
 DEFAULTS: dict[str, Any] = {
     "hotkey_toggle": "f8",

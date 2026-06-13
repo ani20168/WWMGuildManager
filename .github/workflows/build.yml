@@ -1,0 +1,82 @@
+name: Build & Release
+
+# 觸發條件：推送 v*.*.* 格式的 tag（例如 v1.0.0）
+# 也可從 GitHub 頁面手動觸發
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag（例如 v1.2.3）"
+        required: true
+        default: "v0.0.0-test"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. 取得原始碼 ────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. 設定 Python（含 pip 快取加速重複建置）────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. 安裝依賴套件 ──────────────────────────────────────────────────
+      #    easyocr 會拉 PyTorch CPU 版（GitHub runner 無 CUDA），約 500MB
+      #    pip cache 可大幅縮短第二次以後的建置時間
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # ── 4. PyInstaller 打包 ──────────────────────────────────────────────
+      - name: Build with PyInstaller
+        run: pyinstaller WWMGuildManager.spec
+
+      # ── 5. 確認輸出目錄 ──────────────────────────────────────────────────
+      - name: List dist folder
+        run: Get-ChildItem -Path dist\WWMGuildManager | Select-Object Name, Length
+
+      # ── 6. 壓縮成 zip ────────────────────────────────────────────────────
+      - name: Zip release artifact
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "${{ github.event.inputs.tag_name }}"
+          } else {
+            "${{ github.ref_name }}"
+          }
+          Compress-Archive `
+            -Path "dist\WWMGuildManager" `
+            -DestinationPath "WWMGuildManager-${tag}-windows.zip"
+          Write-Output "ZIP_NAME=WWMGuildManager-${tag}-windows.zip" >> $env:GITHUB_ENV
+
+      # ── 7. 上傳至 GitHub Releases ────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.tag_name }}
+          name: Release ${{ github.ref_name || github.event.inputs.tag_name }}
+          files: ${{ env.ZIP_NAME }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') || contains(github.event.inputs.tag_name, '-') }}
+          body: |
+            ## 使用說明
+            1. 下載並解壓縮 `${{ env.ZIP_NAME }}`
+            2. 進入 `WWMGuildManager` 資料夾，執行 `WWMGuildManager.exe`
+            3. **首次啟動**時 EasyOCR 會自動下載 OCR 模型（約 50MB，需要網路）
+            4. `config.json` 位於同資料夾，可自行調整設定
+
+            ## 系統需求
+            - Windows 10 / 11（64 位元）
+            - 不需安裝 Python
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
