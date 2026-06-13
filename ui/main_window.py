@@ -24,8 +24,8 @@ class MainWindow(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
 
         self.title("WWM Guild Manager")
-        self.geometry("1000x730")
-        self.minsize(800, 610)
+        self.geometry("1000x830")
+        self.minsize(800, 710)
         self.configure(fg_color=CLR_CONTENT_BG)
 
         # 防止視窗消失時仍在跑背景執行緒

@@ -71,6 +71,7 @@ class MemberVisitPage(BasePage):
 
     def __init__(self, parent, app_controller, config_manager, **kwargs):
         super().__init__(parent, app_controller, config_manager, **kwargs)
+        self._is_active = False
         self._recognizer = MemberRecognizer(app_controller, config_manager)
         self._recognizer.on_players_updated = self._on_players_updated
         self._recognizer.on_log = self._on_log
@@ -91,6 +92,7 @@ class MemberVisitPage(BasePage):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 0))
         header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(1, weight=0)
 
         ctk.CTkLabel(
             header,
@@ -107,6 +109,15 @@ class MemberVisitPage(BasePage):
             text_color=CLR_TEXT_DIM,
             anchor="w",
         ).grid(row=1, column=0, sticky="w")
+
+        self._status_label = ctk.CTkLabel(
+            header,
+            text="● 已停止",
+            font=ctk.CTkFont(size=12),
+            text_color=CLR_TEXT_DIM,
+            anchor="e",
+        )
+        self._status_label.grid(row=0, column=1, sticky="e")
 
         # ── 篩選 + 操作區 ───────────────────────────────────────────────────
         ctrl_card = ctk.CTkFrame(self, fg_color=CLR_CARD, corner_radius=10, border_width=1, border_color=CLR_BORDER)
@@ -128,8 +139,6 @@ class MemberVisitPage(BasePage):
         log_frame.grid_columnconfigure(0, weight=1)
         self._build_log_section(log_frame)
 
-        # ── 狀態列 ──────────────────────────────────────────────────────────
-        self._build_status_bar()
 
     def _build_filter_section(self, card: ctk.CTkFrame) -> None:
         pad = {"padx": 12, "pady": 12}
@@ -274,29 +283,6 @@ class MemberVisitPage(BasePage):
         )
         self._log_box.pack(fill="x", padx=8, pady=(0, 8))
 
-    def _build_status_bar(self) -> None:
-        bar = ctk.CTkFrame(self, fg_color="#0d1420", corner_radius=0, height=32)
-        bar.grid(row=4, column=0, sticky="ew", padx=0)
-        bar.grid_columnconfigure(0, weight=1)
-        bar.grid_propagate(False)
-
-        self._status_label = ctk.CTkLabel(
-            bar,
-            text="● 已停止",
-            font=ctk.CTkFont(size=12),
-            text_color=CLR_TEXT_DIM,
-            anchor="w",
-        )
-        self._status_label.grid(row=0, column=0, sticky="w", padx=16)
-
-        self._last_refresh_label = ctk.CTkLabel(
-            bar,
-            text="",
-            font=ctk.CTkFont(size=11),
-            text_color=CLR_TEXT_DIM,
-            anchor="e",
-        )
-        self._last_refresh_label.grid(row=0, column=1, sticky="e", padx=16)
 
     # ── 操作 ────────────────────────────────────────────────────────────────
     def _toggle_recognition(self) -> None:
@@ -304,21 +290,23 @@ class MemberVisitPage(BasePage):
         self.app.toggle_recognition()
 
     def _on_recognition_change(self, active: bool) -> None:
-        """識別狀態變化時更新按鈕文字"""
+        """識別狀態變化時更新按鈕文字；只在當前頁面可見時才啟停識別器"""
         if active:
             self._toggle_btn.configure(
                 text="■  停止識別",
                 fg_color="#4a1a1a",
                 hover_color="#602525",
             )
-            self._recognizer.start()
+            if self._is_active:
+                self._recognizer.start()
         else:
             self._toggle_btn.configure(
                 text="▶  開始識別",
                 fg_color="#1a4a1a",
                 hover_color="#256025",
             )
-            self._recognizer.stop()
+            if self._is_active:
+                self._recognizer.stop()
 
     def _save_filters(self) -> None:
         level = self._level_entry.get().strip()
@@ -378,8 +366,6 @@ class MemberVisitPage(BasePage):
                 text_color=CLR_TEXT_DIM,
             )
 
-        now = datetime.datetime.now().strftime("%H:%M:%S")
-        self._last_refresh_label.configure(text=f"最後更新：{now}")
 
     def _append_log(self, msg: str) -> None:
         now = datetime.datetime.now().strftime("%H:%M:%S")
@@ -409,6 +395,10 @@ class MemberVisitPage(BasePage):
     # ── 生命週期 ─────────────────────────────────────────────────────────────
     def on_show(self) -> None:
         self._save_filters()
+        self._is_active = True
+        if self.app.recognition_active:
+            self._recognizer.start()
 
     def on_hide(self) -> None:
-        pass
+        self._is_active = False
+        self._recognizer.stop()

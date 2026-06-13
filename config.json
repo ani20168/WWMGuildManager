@@ -6,5 +6,10 @@
   "member_visit": {
     "filter_level": "",
     "filter_language": "中文"
+  },
+  "member_kick": {
+    "filter_contribution": 500,
+    "avatar_x": 225,
+    "avatar_y": 365
   }
 }

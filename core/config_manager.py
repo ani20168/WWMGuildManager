@@ -14,6 +14,11 @@ DEFAULTS: dict[str, Any] = {
         "filter_level": "",
         "filter_language": "",
     },
+    "member_kick": {
+        "filter_contribution": 500,
+        "avatar_x": 0,
+        "avatar_y": 0,
+    },
 }
 
 

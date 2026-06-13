@@ -25,11 +25,13 @@ from core.hotkey_manager import HotkeyManager
 from ui.main_window import MainWindow
 from pages.home.home_page import HomePage
 from pages.member_visit.member_visit_page import MemberVisitPage
+from pages.member_kick.member_kick_page import MemberKickPage
 
 # ── 分頁清單（依此順序顯示在側邊欄）──────────────────────────────────────────
 PAGES = [
     HomePage,
     MemberVisitPage,
+    MemberKickPage,
 ]
 
 
