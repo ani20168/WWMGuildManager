@@ -233,6 +233,19 @@ class HomePage(BasePage):
             resolution=0.25,
         )
 
+        self._build_slider_row(
+            inner,
+            row=6,
+            label="踢出確認延遲",
+            desc="智慧踢人：點擊踢出按鈕後，等待確認彈窗出現的時間",
+            config_key="member_kick.confirm_delay",
+            from_=0.2,
+            to=3.0,
+            default=1.5,
+            unit="秒",
+            resolution=0.1,
+        )
+
     def _build_slider_row(
         self,
         parent,

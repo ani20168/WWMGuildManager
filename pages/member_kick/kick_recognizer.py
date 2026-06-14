@@ -267,6 +267,8 @@ class MemberKickRecognizer:
             return False
 
         pydirectinput.click(bx, by)
+        confirm_delay = float(self._cfg.get("member_kick.confirm_delay", 1.5))
+        self._stop_event.wait(timeout=confirm_delay)
         pydirectinput.press("space")
         self._log("✅ 已點踢出，按 Space 確認")
         return True

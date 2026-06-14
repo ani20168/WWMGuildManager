@@ -10,6 +10,7 @@
   "member_kick": {
     "filter_contribution": 500,
     "avatar_x": 225,
-    "avatar_y": 365
+    "avatar_y": 365,
+    "confirm_delay": 0.61
   }
 }
