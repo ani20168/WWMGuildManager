@@ -41,6 +41,8 @@ hiddenimports = [
     "tkinter",
     "tkinter.ttk",
     "_tkinter",
+    # torch（EasyOCR 初始化時需要）
+    "torch.distributed",
 ]
 
 # ── 排除不需要的大型套件（減小打包體積）──────────────────────────────────────
@@ -55,7 +57,6 @@ excludes = [
     "unittest",
     "caffe2",
     "torch.testing",
-    "torch.distributed",
     "torch.utils.tensorboard",
     "torchvision.datasets",
 ]
