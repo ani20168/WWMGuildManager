@@ -7,11 +7,21 @@
 """
 from __future__ import annotations
 import os
+import sys
 import customtkinter as ctk
 from PIL import Image
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_ICON_PATH = os.path.join(_HERE, "..", "images", "other", "icon.png")
+
+def _bundle_path(relative: str) -> str:
+    """打包後從 _MEIPASS 讀取內建資源；開發時從專案根目錄讀取。"""
+    if getattr(sys, "frozen", False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.join(_HERE, "..")
+    return os.path.join(base, relative)
+
+_ICON_PATH = _bundle_path(os.path.join("images", "other", "icon.png"))
 
 # 顏色常數
 CLR_BG = "#1a1a2e"

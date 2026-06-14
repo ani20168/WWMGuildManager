@@ -20,8 +20,11 @@ datas += collect_data_files("customtkinter")
 # easyocr：語言設定、字元表等（OCR 權重模型在執行時才下載，不打包）
 datas += collect_data_files("easyocr")
 
-# images/ 資料夾不打包進去，讓使用者可以自行替換模板圖片
-# build.yml 會在打包後把 images/ 複製到 dist 根目錄
+# images/other/（app icon）打包進 _internal，供程式碼用 sys._MEIPASS 讀取
+datas += [("images/other", "images/other")]
+
+# images/member_kick、images/member_visit 不打包進去，讓使用者可以自行替換模板圖片
+# build.yml 會在打包後把這兩個子資料夾複製到 dist 根目錄
 
 # ── 隱式 import（PyInstaller 靜態分析可能漏掉的模組）────────────────────────
 hiddenimports = [
