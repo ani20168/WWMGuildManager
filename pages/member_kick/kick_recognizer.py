@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -31,7 +32,13 @@ from core.screen_capture import capture_game_window
 
 pydirectinput.PAUSE = 0.05
 
-IMAGES_DIR        = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "images", "member_kick")
+# 打包後從 exe 同層目錄讀取（使用者可自行替換圖片）；開發時從專案根目錄讀取
+if getattr(sys, "frozen", False):
+    _ROOT = os.path.dirname(sys.executable)
+else:
+    _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+IMAGES_DIR        = os.path.join(_ROOT, "images", "member_kick")
 KICK_BTN_TEMPLATE = os.path.join(IMAGES_DIR, "kick_button.png")
 
 # ── 表格區域（相對於視窗高度/寬度）─────────────────────────────────────────

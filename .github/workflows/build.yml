@@ -49,6 +49,10 @@ jobs:
       - name: List dist folder
         run: Get-ChildItem -Path dist\WWMGuildManager | Select-Object Name, Length
 
+      # ── 6. 複製 images/ 到 dist 根目錄（讓使用者可自行替換模板圖片）────────
+      - name: Copy images to dist
+        run: Copy-Item -Path "images" -Destination "dist\WWMGuildManager\images" -Recurse
+
       # ── 6. 壓縮成 zip ────────────────────────────────────────────────────
       - name: Zip release artifact
         run: |
