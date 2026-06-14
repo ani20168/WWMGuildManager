@@ -46,19 +46,14 @@ hiddenimports = [
 ]
 
 # ── 排除不需要的大型套件（減小打包體積）──────────────────────────────────────
+# 僅排除與本程式完全無關、且確認不被 EasyOCR/torch/torchvision 間接依賴的套件
 excludes = [
     "matplotlib",
-    "scipy",
     "pandas",
     "IPython",
     "jupyter",
     "notebook",
-    "pytest",
-    "unittest",
     "caffe2",
-    "torch.testing",
-    "torch.utils.tensorboard",
-    "torchvision.datasets",
 ]
 
 block_cipher = None
