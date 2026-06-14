@@ -33,11 +33,13 @@ jobs:
           cache: "pip"
 
       # ── 3. 安裝依賴套件 ──────────────────────────────────────────────────
-      #    easyocr 會拉 PyTorch CPU 版（GitHub runner 無 CUDA），約 500MB
+      #    先明確安裝 CUDA 版 PyTorch（runner 無 GPU 也能安裝，DLL 會被打包進 exe）
+      #    若不先裝，easyocr 預設會從 PyPI 拉 CPU-only 版，導致發布版無法 GPU 加速
       #    pip cache 可大幅縮短第二次以後的建置時間
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install torch==2.9.0 torchvision==0.24.0 --index-url https://download.pytorch.org/whl/cu130
           pip install -r requirements.txt
           pip install pyinstaller
 
