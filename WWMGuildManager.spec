@@ -7,10 +7,8 @@ PyInstaller 打包設定
 注意事項：
   - 首次執行時 EasyOCR 會自動下載 OCR 模型（約 50MB，存至 %USERPROFILE%\.EasyOCR）
   - 打包後 config.json 位於 exe 同層目錄，使用者可自行修改
-  - 最終資料夾大小約 2.5GB～3GB（含 CUDA，排除不必要的 CUDA DLL 後）
+  - 最終資料夾大小約 3～4GB（含完整 CUDA 函式庫）
 """
-import os
-import re
 from PyInstaller.utils.hooks import collect_data_files, collect_all
 
 # ── 資料檔 ─────────────────────────────────────────────────────────────────
@@ -60,39 +58,6 @@ excludes = [
 
 block_cipher = None
 
-# ── EasyOCR 推論不需要的 CUDA DLL（排除以減少打包體積）──────────────────────
-# 保留：torch_cuda / torch_cpu / c10 / c10_cuda / cudart / cublas(Lt) /
-#        cudnn_ops / cudnn_cnn / cudnn_adv(LSTM) / cudnn_heuristic /
-#        cudnn_engines_precompiled / cudnn_engines_runtime_compiled /
-#        libiomp5md / zlibwapi / uv
-#
-# 排除理由：
-#   cuSPARSE / cuFFT / cuSOLVER → 稀疏矩陣、FFT、線性求解，純推論不使用
-#                                  注意：cuSPARSE 與 cuSOLVER 互相依賴，必須同時排除或同時保留
-#   cuRAND                       → 亂數生成，訓練用
-#   nvrtc / nvJitLink            → torch.compile / JIT 編譯，EasyOCR 不使用
-#   nvperf / cupti / nvToolsExt  → NVIDIA 效能分析工具
-#
-# 使用前綴正則比對，避免因 CUDA 版本不同（如 _11.dll vs _12.dll）造成漏排
-_EXCLUDE_PATTERNS = re.compile(
-    r"^("
-    # ── 可安全排除：torch_cuda.dll / torch_cpu.dll 無直接 PE import ──────────
-    r"curand\d"             # cuRAND：亂數生成，推論不需要
-    r"|nvrtc[\d\-]"         # NVRTC JIT 編譯器（torch.compile / Triton 用）
-    r"|nvJitLink"           # nvJitLink
-    r"|caffe2_nvrtc"        # Caffe2 NVRTC
-    r"|nvperf_host"         # NVIDIA 效能分析
-    r"|nvToolsExt\d"        # NVTX
-    # ── 以下原本排除，但確認是 torch_cuda.dll / torch_cpu.dll 的普通 PE import ─
-    # ── 若缺少會導致整個 DLL 無法載入，必須留在包內 ──────────────────────────
-    # cuSPARSE  → torch_cuda.dll 直接依賴（PE import）
-    # cuFFT     → torch_cuda.dll 直接依賴（PE import）
-    # cuSOLVER  → torch_cuda.dll 直接依賴（PE import）
-    # cupti     → torch_cpu.dll  直接依賴（PE import），缺少會連 CPU 模式都無法啟動
-    r").*\.dll$",
-    re.IGNORECASE,
-)
-
 a = Analysis(
     ["main.py"],
     pathex=[],
@@ -108,12 +73,6 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
-
-# 過濾掉不需要的 CUDA DLL（正則前綴比對，不受 CUDA 版本號影響）
-a.binaries = TOC([
-    b for b in a.binaries
-    if not _EXCLUDE_PATTERNS.match(os.path.basename(b[0]))
-])
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -133,7 +92,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="images/icon.ico",  # 若有 icon 請取消此行註解
     icon="images/other/icon.ico",
 )
 
