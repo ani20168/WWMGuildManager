@@ -76,17 +76,19 @@ block_cipher = None
 # 使用前綴正則比對，避免因 CUDA 版本不同（如 _11.dll vs _12.dll）造成漏排
 _EXCLUDE_PATTERNS = re.compile(
     r"^("
-    r"cusparse\d"           # cuSPARSE（所有版本號）
-    r"|cufft[w]?\d"         # cuFFT / cuFFTW
-    r"|cusolver\d"          # cuSOLVER
-    r"|cusolverMg\d"        # cuSOLVER Multi-GPU
-    r"|curand\d"            # cuRAND
-    r"|nvrtc[\d\-]"         # NVRTC JIT 編譯器（nvrtc64_xxx / nvrtc-builtins）
+    # ── 可安全排除：torch_cuda.dll / torch_cpu.dll 無直接 PE import ──────────
+    r"curand\d"             # cuRAND：亂數生成，推論不需要
+    r"|nvrtc[\d\-]"         # NVRTC JIT 編譯器（torch.compile / Triton 用）
     r"|nvJitLink"           # nvJitLink
     r"|caffe2_nvrtc"        # Caffe2 NVRTC
     r"|nvperf_host"         # NVIDIA 效能分析
-    r"|cupti\d"             # CUPTI Profiling
     r"|nvToolsExt\d"        # NVTX
+    # ── 以下原本排除，但確認是 torch_cuda.dll / torch_cpu.dll 的普通 PE import ─
+    # ── 若缺少會導致整個 DLL 無法載入，必須留在包內 ──────────────────────────
+    # cuSPARSE  → torch_cuda.dll 直接依賴（PE import）
+    # cuFFT     → torch_cuda.dll 直接依賴（PE import）
+    # cuSOLVER  → torch_cuda.dll 直接依賴（PE import）
+    # cupti     → torch_cpu.dll  直接依賴（PE import），缺少會連 CPU 模式都無法啟動
     r").*\.dll$",
     re.IGNORECASE,
 )
