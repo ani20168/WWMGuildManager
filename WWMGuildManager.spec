@@ -67,7 +67,8 @@ block_cipher = None
 #   cuSPARSE/cuFFT/cuSOLVER  → 稀疏矩陣、FFT、線性求解，純推論不使用
 #   cuRAND                    → 亂數生成，訓練用
 #   nvrtc / nvJitLink         → torch.compile / JIT 編譯，EasyOCR 不使用
-#   cudnn_engines_runtime     → precompiled 版存在時不需要 runtime 編譯
+#   注意：cudnn_engines_runtime_compiled 必須保留！cuDNN 9.x 初始化時會嘗試載入
+#         所有引擎子庫（precompiled + runtime），缺少其中一個就會報 SUBLIBRARY_LOADING_FAILED
 #   nvperf / cupti / nvToolsExt → NVIDIA 效能分析工具
 _EXCLUDE_CUDA_DLLS = {
     # cuSPARSE
@@ -86,8 +87,6 @@ _EXCLUDE_CUDA_DLLS = {
     "nvJitLink_120_0.dll",
     "nvrtc-builtins64_128.dll",
     "caffe2_nvrtc.dll",
-    # cuDNN runtime 編譯引擎（precompiled 版已存在，此為備援）
-    "cudnn_engines_runtime_compiled64_9.dll",
     # NVIDIA 效能分析工具
     "nvperf_host.dll",
     "cupti64_2025.1.1.dll",
