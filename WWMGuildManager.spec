@@ -10,6 +10,7 @@ PyInstaller 打包設定
   - 最終資料夾大小約 2.5GB～3GB（含 CUDA，排除不必要的 CUDA DLL 後）
 """
 import os
+import re
 from PyInstaller.utils.hooks import collect_data_files, collect_all
 
 # ── 資料檔 ─────────────────────────────────────────────────────────────────
@@ -59,39 +60,36 @@ excludes = [
 
 block_cipher = None
 
-# ── EasyOCR 推論不需要的 CUDA DLL（排除以減少打包體積約 1.3 GB）────────────────
+# ── EasyOCR 推論不需要的 CUDA DLL（排除以減少打包體積）──────────────────────
 # 保留：torch_cuda / torch_cpu / c10 / c10_cuda / cudart / cublas(Lt) /
 #        cudnn_ops / cudnn_cnn / cudnn_adv(LSTM) / cudnn_heuristic /
-#        cudnn_engines_precompiled / libiomp5md / zlibwapi / uv
+#        cudnn_engines_precompiled / cudnn_engines_runtime_compiled /
+#        libiomp5md / zlibwapi / uv
+#
 # 排除理由：
-#   cuSPARSE/cuFFT/cuSOLVER  → 稀疏矩陣、FFT、線性求解，純推論不使用
-#   cuRAND                    → 亂數生成，訓練用
-#   nvrtc / nvJitLink         → torch.compile / JIT 編譯，EasyOCR 不使用
-#   注意：cudnn_engines_runtime_compiled 必須保留！cuDNN 9.x 初始化時會嘗試載入
-#         所有引擎子庫（precompiled + runtime），缺少其中一個就會報 SUBLIBRARY_LOADING_FAILED
-#   nvperf / cupti / nvToolsExt → NVIDIA 效能分析工具
-_EXCLUDE_CUDA_DLLS = {
-    # cuSPARSE
-    "cusparse64_12.dll",
-    # cuFFT
-    "cufft64_11.dll",
-    "cufftw64_11.dll",
-    # cuSOLVER
-    "cusolver64_11.dll",
-    "cusolverMg64_11.dll",
-    # cuRAND
-    "curand64_10.dll",
-    # NVRTC JIT 編譯器（torch.compile / Triton 用，推論不需要）
-    "nvrtc64_120_0.dll",
-    "nvrtc64_120_0.alt.dll",
-    "nvJitLink_120_0.dll",
-    "nvrtc-builtins64_128.dll",
-    "caffe2_nvrtc.dll",
-    # NVIDIA 效能分析工具
-    "nvperf_host.dll",
-    "cupti64_2025.1.1.dll",
-    "nvToolsExt64_1.dll",
-}
+#   cuSPARSE / cuFFT / cuSOLVER → 稀疏矩陣、FFT、線性求解，純推論不使用
+#                                  注意：cuSPARSE 與 cuSOLVER 互相依賴，必須同時排除或同時保留
+#   cuRAND                       → 亂數生成，訓練用
+#   nvrtc / nvJitLink            → torch.compile / JIT 編譯，EasyOCR 不使用
+#   nvperf / cupti / nvToolsExt  → NVIDIA 效能分析工具
+#
+# 使用前綴正則比對，避免因 CUDA 版本不同（如 _11.dll vs _12.dll）造成漏排
+_EXCLUDE_PATTERNS = re.compile(
+    r"^("
+    r"cusparse\d"           # cuSPARSE（所有版本號）
+    r"|cufft[w]?\d"         # cuFFT / cuFFTW
+    r"|cusolver\d"          # cuSOLVER
+    r"|cusolverMg\d"        # cuSOLVER Multi-GPU
+    r"|curand\d"            # cuRAND
+    r"|nvrtc[\d\-]"         # NVRTC JIT 編譯器（nvrtc64_xxx / nvrtc-builtins）
+    r"|nvJitLink"           # nvJitLink
+    r"|caffe2_nvrtc"        # Caffe2 NVRTC
+    r"|nvperf_host"         # NVIDIA 效能分析
+    r"|cupti\d"             # CUPTI Profiling
+    r"|nvToolsExt\d"        # NVTX
+    r").*\.dll$",
+    re.IGNORECASE,
+)
 
 a = Analysis(
     ["main.py"],
@@ -109,10 +107,10 @@ a = Analysis(
     noarchive=False,
 )
 
-# 過濾掉不需要的 CUDA DLL（在 a.binaries TOC 中比對檔名）
+# 過濾掉不需要的 CUDA DLL（正則前綴比對，不受 CUDA 版本號影響）
 a.binaries = TOC([
     b for b in a.binaries
-    if os.path.basename(b[0]).lower() not in _EXCLUDE_CUDA_DLLS
+    if not _EXCLUDE_PATTERNS.match(os.path.basename(b[0]))
 ])
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
