@@ -57,21 +57,36 @@ def is_system_dll(name: str) -> bool:
     return any(n.startswith(p) for p in SYSTEM_PREFIXES)
 
 
-def get_dll_imports(path: Path) -> list[str]:
-    """用 pefile 讀取 DLL 的 Import Table，回傳依賴的 DLL 名稱清單。"""
+def get_dll_imports(path: Path) -> tuple[list[str], list[str]]:
+    """用 pefile 讀取 DLL 的 Import Table。
+
+    回傳 (regular_imports, delay_load_imports)：
+    - regular_imports：普通 PE import，DLL 載入時就必須存在，缺了會立刻失敗
+    - delay_load_imports：延遲載入，只在實際呼叫到對應函式時才載入，
+                          缺了不影響 DLL 本身載入（例如 torch_cuda.dll 對
+                          cuFFT/cuSolver/cuSPARSE 的依賴，EasyOCR 推論不會觸發）
+    """
     import pefile
     try:
         pe = pefile.PE(str(path), fast_load=True)
-        pe.parse_data_directories(
-            directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_IMPORT"]]
-        )
-        if not hasattr(pe, "DIRECTORY_ENTRY_IMPORT"):
-            return []
-        return [entry.dll.decode("ascii", errors="ignore")
-                for entry in pe.DIRECTORY_ENTRY_IMPORT
-                if entry.dll]
+        pe.parse_data_directories(directories=[
+            pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_IMPORT"],
+            pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT"],
+        ])
+        regular = []
+        if hasattr(pe, "DIRECTORY_ENTRY_IMPORT"):
+            regular = [e.dll.decode("ascii", errors="ignore")
+                       for e in pe.DIRECTORY_ENTRY_IMPORT if e.dll]
+        delayed = []
+        if hasattr(pe, "DIRECTORY_ENTRY_DELAY_IMPORT"):
+            delayed = [e.dll.decode("ascii", errors="ignore")
+                       for e in pe.DIRECTORY_ENTRY_DELAY_IMPORT if e.dll]
+        # 從普通 import 中移除同時出現在 delay-load 的項目（pefile 有時會重複）
+        delayed_lower = {d.lower() for d in delayed}
+        regular = [r for r in regular if r.lower() not in delayed_lower]
+        return regular, delayed
     except Exception:
-        return []
+        return [], []
 
 
 def check(dist_dir: Path) -> bool:
@@ -90,41 +105,53 @@ def check(dist_dir: Path) -> bool:
     print(f"掃描目錄：{torch_lib}")
     print(f"torch\\lib 共有 {len(list(torch_lib.glob('*.dll')))} 個 DLL，包內共 {len(all_dlls)} 個 DLL\n")
 
-    issues: list[tuple[str, str]] = []
+    issues: list[tuple[str, str]] = []       # 普通 import 缺失 → 會 crash
+    warnings: list[tuple[str, str]] = []    # delay-load 缺失 → 僅功能受限
 
     for dll_path in sorted(torch_lib.glob("*.dll")):
-        for dep in get_dll_imports(dll_path):
+        regular, delayed = get_dll_imports(dll_path)
+
+        for dep in regular:
             dep_lower = dep.lower()
-            if dep_lower in all_dlls:
-                continue
-            if is_system_dll(dep):
+            if dep_lower in all_dlls or is_system_dll(dep):
                 continue
             issues.append((dll_path.name, dep))
 
+        for dep in delayed:
+            dep_lower = dep.lower()
+            if dep_lower in all_dlls or is_system_dll(dep):
+                continue
+            warnings.append((dll_path.name, dep))
+
+    from collections import defaultdict
+
+    def print_group(label: str, data: list[tuple[str, str]]) -> None:
+        by_missing: dict[str, list[str]] = defaultdict(list)
+        for owner, missing in data:
+            by_missing[missing].append(owner)
+        for missing in sorted(by_missing):
+            owners = by_missing[missing]
+            print(f"  {label} {missing}")
+            for o in owners[:3]:
+                print(f"         <- 被 {o} 依賴")
+            if len(owners) > 3:
+                print(f"         <- 還有 {len(owners)-3} 個 DLL 依賴它")
+
+    if warnings:
+        print(f"[WARN] {len(warnings)} 個 Delay-Load 依賴不在包內"
+              f"（EasyOCR 推論不呼叫這些路徑，不影響執行）：\n")
+        print_group("[delay]", warnings)
+        print()
+
     if not issues:
-        print("[OK] torch\\lib 所有 DLL 依賴都在包內或系統白名單，無問題！")
-        print("     在沒有 CUDA 的電腦上應該也可以正常執行。")
+        print("[OK] 無普通 import 缺失，在沒有 CUDA 的電腦上可以正常執行。")
         return True
 
-    print(f"[FAIL] 發現 {len(issues)} 個依賴問題（在無 CUDA 的電腦上會失敗）：\n")
-
-    # 以「缺少的 DLL」分組
-    from collections import defaultdict
-    by_missing: dict[str, list[str]] = defaultdict(list)
-    for owner, missing in issues:
-        by_missing[missing].append(owner)
-
-    for missing in sorted(by_missing):
-        owners = by_missing[missing]
-        print(f"  [缺少] {missing}")
-        for o in owners[:5]:  # 最多顯示 5 個依賴方
-            print(f"         <- 被 {o} 依賴")
-        if len(owners) > 5:
-            print(f"         <- 還有 {len(owners)-5} 個 DLL 依賴它")
-
+    print(f"[FAIL] 發現 {len(issues)} 個普通 import 缺失（在無 CUDA 的電腦上會 crash）：\n")
+    print_group("[缺少]", issues)
     print()
-    print("修復方式：確認上方缺少的 DLL 是否應該打包進來，")
-    print("若是不需要的 CUDA 工具庫，請同時排除 [缺少的 DLL] 和 [依賴它的 DLL]。")
+    print("修復方式：這些 DLL 是 DLL 啟動時就需要載入的，必須打包進來。")
+    print("請從 spec 的 _EXCLUDE_PATTERNS 移除對應的排除規則。")
     return False
 
 
