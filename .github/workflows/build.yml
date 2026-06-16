@@ -59,6 +59,10 @@ jobs:
       - name: Copy images to dist
         run: Copy-Item -Path "images" -Destination "dist\WWMGuildManager\images" -Recurse
 
+      # ── 7b. 建立空的 logs/ 資料夾（程式啟動後也會自動建立，這裡預先放入方便辨識）──
+      - name: Create logs folder in dist
+        run: New-Item -ItemType Directory -Force -Path "dist\WWMGuildManager\logs"
+
       # ── 8. 壓縮成 zip ────────────────────────────────────────────────────
       - name: Zip release artifact
         run: |

@@ -120,6 +120,11 @@ class MainWindow(ctk.CTk):
             self._pages[page_id].on_show()
             self._current_page_id = page_id
 
+            # 記錄分頁切換
+            from core.log_manager import get_log_manager
+            page_title = getattr(type(self._pages[page_id]), "PAGE_TITLE", page_id)
+            get_log_manager().log(f"[PAGE] 切換至分頁：{page_title}", "INFO")
+
     def _on_close(self) -> None:
         self._app.recognition_active = False
         self.destroy()

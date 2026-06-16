@@ -368,6 +368,8 @@ class MemberVisitPage(BasePage):
 
 
     def _append_log(self, msg: str) -> None:
+        from core.log_manager import get_log_manager
+        get_log_manager().log(f"[MemberVisit] {msg}", "INFO")
         now = datetime.datetime.now().strftime("%H:%M:%S")
         self._log_box.configure(state="normal")
         self._log_box.insert("end", f"[{now}] {msg}\n")

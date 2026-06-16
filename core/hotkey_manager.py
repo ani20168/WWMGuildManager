@@ -33,10 +33,19 @@ class HotkeyManager:
         if not hotkey:
             return
         try:
-            keyboard.add_hotkey(hotkey, self._app.toggle_recognition, suppress=False)
+            keyboard.add_hotkey(hotkey, self._on_hotkey_triggered, suppress=False)
             self._current_hotkey = hotkey
         except Exception:
             pass
+
+    def _on_hotkey_triggered(self) -> None:
+        """快捷鍵被按下時：打 log 並觸發識別切換。"""
+        from core.log_manager import get_log_manager
+        get_log_manager().log(
+            f"[HOTKEY] {self._current_hotkey.upper()} pressed - toggle recognition",
+            "HOTKEY",
+        )
+        self._app.toggle_recognition()
 
     def _unregister(self) -> None:
         if self._current_hotkey:

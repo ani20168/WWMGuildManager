@@ -25,6 +25,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from core.log_manager import get_log_manager
 from core.app_controller import AppController
 from core.config_manager import ConfigManager
 from core.window_manager import WindowManager
@@ -43,6 +44,9 @@ PAGES = [
 
 
 def main() -> None:
+    log_mgr = get_log_manager()
+    log_mgr.log("程式啟動，初始化中...", "INFO")
+
     app_ctrl = AppController()
     cfg_mgr = ConfigManager()
 
@@ -52,6 +56,7 @@ def main() -> None:
 
     hk_mgr = HotkeyManager(app_ctrl, cfg_mgr)
     hk_mgr.start()
+    log_mgr.log(f"快捷鍵已註冊：{cfg_mgr.get('hotkey_toggle', 'f8').upper()}", "INFO")
 
     # 建立主視窗
     window = MainWindow(app_ctrl, cfg_mgr)
@@ -62,11 +67,14 @@ def main() -> None:
     if home_page:
         home_page.set_hotkey_manager(hk_mgr)
 
+    log_mgr.log("主視窗已建立，進入事件迴圈", "INFO")
+
     try:
         window.mainloop()
     finally:
         hk_mgr.stop()
         win_mgr.stop()
+        log_mgr.close()
 
 
 if __name__ == "__main__":

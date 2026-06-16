@@ -5,11 +5,27 @@
   - 快捷鍵設定
   - 識別延遲滑桿
   - HDR 補償開關
+  - OCR 測試
 """
 from __future__ import annotations
+import os
+import sys
+import threading
 import customtkinter as ctk
 
 from pages.base_page import BasePage
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _external_path(relative: str) -> str:
+    """取得不打包進 exe 的外部資源路徑（與 exe 同層目錄）。"""
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        # pages/home/ -> project root（上兩層）
+        base = os.path.normpath(os.path.join(_HERE, "..", ".."))
+    return os.path.normpath(os.path.join(base, relative))
 
 CLR_CARD = "#161b27"
 CLR_BORDER = "#2a2d3e"
@@ -78,6 +94,13 @@ class HomePage(BasePage):
             scroll, row,
             title="顯示設定",
             builder=self._build_hdr_section,
+        )
+
+        # ── OCR 測試 ────────────────────────────────────────────────────────
+        row = self._build_card(
+            scroll, row,
+            title="OCR 測試",
+            builder=self._build_ocr_test_section,
         )
 
     def _build_card(self, parent, row: int, title: str, builder) -> int:
@@ -381,3 +404,134 @@ class HomePage(BasePage):
     def _on_hdr_toggle(self) -> None:
         val = self._hdr_switch.get()
         self.cfg.set("hdr_mode", bool(val))
+
+    # ── OCR 測試 Section ────────────────────────────────────────────────────
+    def _build_ocr_test_section(self, card: ctk.CTkFrame) -> None:
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=14)
+        inner.grid_columnconfigure(0, weight=1)
+
+        # 說明文字
+        ctk.CTkLabel(
+            inner,
+            text="使用測試圖片（images/member_kick/member_list_example.png）驗證 EasyOCR 是否正常運作",
+            font=ctk.CTkFont(size=11),
+            text_color=CLR_TEXT_DIM,
+            anchor="w",
+            wraplength=600,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+        # 按鈕 + 狀態列
+        btn_row = ctk.CTkFrame(inner, fg_color="transparent")
+        btn_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+        self._ocr_test_btn = ctk.CTkButton(
+            btn_row,
+            text="測試",
+            width=80,
+            height=30,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#1e3a5f",
+            hover_color="#2a4f80",
+            command=self._start_ocr_test,
+        )
+        self._ocr_test_btn.pack(side="left")
+
+        self._ocr_status_label = ctk.CTkLabel(
+            btn_row,
+            text="尚未測試",
+            font=ctk.CTkFont(size=12),
+            text_color=CLR_TEXT_DIM,
+            anchor="w",
+        )
+        self._ocr_status_label.pack(side="left", padx=(12, 0))
+
+        # 操作日誌文字框（唯讀）
+        self._ocr_log_box = ctk.CTkTextbox(
+            inner,
+            height=150,
+            font=ctk.CTkFont(family="Consolas", size=11),
+            fg_color="#0a0f1a",
+            text_color=CLR_TEXT,
+            state="disabled",
+            wrap="word",
+        )
+        self._ocr_log_box.grid(row=2, column=0, columnspan=2, sticky="ew")
+
+    def _ocr_log(self, msg: str) -> None:
+        """寫入 OCR 測試日誌框，同時寫入 LogManager。需在主執行緒呼叫。"""
+        from core.log_manager import get_log_manager
+        get_log_manager().log(f"[OCRTest] {msg}", "INFO")
+        self._ocr_log_box.configure(state="normal")
+        self._ocr_log_box.insert("end", f"{msg}\n")
+        self._ocr_log_box.see("end")
+        self._ocr_log_box.configure(state="disabled")
+
+    def _ocr_log_from_thread(self, msg: str) -> None:
+        """從背景執行緒安全地寫入 OCR 日誌框（透過 after 排程至主執行緒）。"""
+        self.after(0, self._ocr_log, msg)
+
+    def _ocr_set_status(self, text: str, color: str) -> None:
+        """設定狀態標籤，需在主執行緒呼叫。"""
+        self._ocr_status_label.configure(text=text, text_color=color)
+
+    def _start_ocr_test(self) -> None:
+        """按下「測試」按鈕：清空日誌、禁用按鈕、啟動背景執行緒。"""
+        self._ocr_test_btn.configure(state="disabled")
+        self._ocr_log_box.configure(state="normal")
+        self._ocr_log_box.delete("1.0", "end")
+        self._ocr_log_box.configure(state="disabled")
+        self._ocr_set_status("測試中...", CLR_TEXT_DIM)
+
+        t = threading.Thread(target=self._run_ocr_test, daemon=True)
+        t.start()
+
+    def _run_ocr_test(self) -> None:
+        """OCR 測試主流程（在背景執行緒執行）。"""
+        try:
+            # 步驟 a：初始化 OCR 引擎
+            self._ocr_log_from_thread("正在初始化 OCR 引擎...")
+            import easyocr
+            import torch
+            use_gpu = torch.cuda.is_available()
+            self._ocr_log_from_thread(f"運算模式：{'GPU (' + torch.cuda.get_device_name(0) + ')' if use_gpu else 'CPU（未偵測到 CUDA GPU）'}")
+            reader = easyocr.Reader(["ch_tra", "en"], gpu=use_gpu, verbose=False)
+            self._ocr_log_from_thread("OCR 引擎載入完成")
+
+            # 步驟 d：讀取測試圖片
+            self._ocr_log_from_thread("正在讀取測試圖片...")
+            img_path = _external_path(
+                os.path.join("images", "member_kick", "member_list_example.png")
+            )
+            if not os.path.exists(img_path):
+                raise FileNotFoundError(f"找不到測試圖片：{img_path}")
+            self._ocr_log_from_thread(f"圖片路徑：{img_path}")
+
+            # 步驟 f：執行 OCR 識別
+            self._ocr_log_from_thread("正在執行 OCR 識別...")
+            results = reader.readtext(img_path, detail=0)
+
+            # 步驟 h/i：處理結果
+            if results:
+                count = len(results)
+                self.after(
+                    0, self._ocr_set_status, "✓ OCR 測試成功", CLR_SUCCESS
+                )
+                self._ocr_log_from_thread(f"識別成功，共識別到 {count} 個文字區塊")
+                preview = results[:5]
+                self._ocr_log_from_thread(f"識別內容（前5項）: {preview}")
+            else:
+                self.after(
+                    0, self._ocr_set_status, "✗ OCR 無法識別任何內容", CLR_ERROR
+                )
+                self._ocr_log_from_thread("OCR 識別完成，但未識別到任何文字")
+
+        except Exception as exc:
+            err_msg = str(exc)
+            self.after(
+                0, self._ocr_set_status, f"✗ 錯誤: {err_msg[:60]}", CLR_ERROR
+            )
+            self._ocr_log_from_thread(f"錯誤詳情：{err_msg}")
+        finally:
+            self.after(0, lambda: self._ocr_test_btn.configure(state="normal"))
