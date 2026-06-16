@@ -4,6 +4,7 @@
 所有模組都可以訂閱狀態變化，而不需要直接互相依賴。
 """
 from __future__ import annotations
+import time
 from typing import Callable
 
 
@@ -12,6 +13,7 @@ class AppController:
         self._game_found: bool = False
         self._recognition_active: bool = False
         self.game_hwnd: int = 0
+        self.recognition_start_time: float = 0.0  # 識別啟動的時間戳（用於緩衝期）
 
         # 觀察者回呼列表
         self._on_game_found_callbacks: list[Callable[[bool], None]] = []
@@ -41,6 +43,8 @@ class AppController:
     def recognition_active(self, value: bool) -> None:
         if self._recognition_active != value:
             self._recognition_active = value
+            if value:
+                self.recognition_start_time = time.time()
             for cb in self._on_recognition_callbacks:
                 cb(value)
 

@@ -92,8 +92,10 @@ class WindowManager:
                 self._app.game_hwnd = hwnd
 
                 # 如果識別中且焦點離開遊戲視窗，自動停止識別
+                # 啟動後 2 秒內為緩衝期（等待焦點自動切回遊戲），不觸發自動停止
                 if self._app.recognition_active:
-                    if fg_proc != TARGET_PROCESS:
+                    grace = time.time() - self._app.recognition_start_time < 2.0
+                    if not grace and fg_proc != TARGET_PROCESS:
                         self._app.recognition_active = False
             else:
                 self._app.game_found = False

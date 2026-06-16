@@ -288,6 +288,16 @@ class MemberVisitPage(BasePage):
     def _toggle_recognition(self) -> None:
         self._save_filters()
         self.app.toggle_recognition()
+        if self.app.recognition_active and self.app.game_hwnd:
+            self.after(300, self._focus_game_window)
+
+    def _focus_game_window(self) -> None:
+        """將作業系統焦點切到遊戲視窗。"""
+        import win32gui
+        try:
+            win32gui.SetForegroundWindow(self.app.game_hwnd)
+        except Exception:
+            pass
 
     def _on_recognition_change(self, active: bool) -> None:
         """識別狀態變化時更新按鈕文字；只在當前頁面可見時才啟停識別器"""
