@@ -96,6 +96,13 @@ class HomePage(BasePage):
             builder=self._build_hdr_section,
         )
 
+        # ── 識別區域調整 ────────────────────────────────────────────────────
+        row = self._build_card(
+            scroll, row,
+            title="識別區域調整",
+            builder=self._build_zone_adjust_section,
+        )
+
         # ── OCR 測試 ────────────────────────────────────────────────────────
         row = self._build_card(
             scroll, row,
@@ -149,6 +156,7 @@ class HomePage(BasePage):
 
     def _on_game_state_change(self, found: bool) -> None:
         self._refresh_window_status(found)
+        self._refresh_zone_buttons_state(found)
 
     def _refresh_window_status(self, found: bool) -> None:
         if found:
@@ -404,6 +412,79 @@ class HomePage(BasePage):
     def _on_hdr_toggle(self) -> None:
         val = self._hdr_switch.get()
         self.cfg.set("hdr_mode", bool(val))
+
+    # ── 識別區域調整 Section ────────────────────────────────────────────────
+    def _build_zone_adjust_section(self, card: ctk.CTkFrame) -> None:
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=14)
+        inner.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            inner,
+            text="視覺化調整各功能頁的 OCR 識別框位置。需要偵測到遊戲視窗（wwm.exe）才能截圖。",
+            font=ctk.CTkFont(size=11),
+            text_color=CLR_TEXT_DIM,
+            anchor="w",
+            wraplength=600,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        btn_row = ctk.CTkFrame(inner, fg_color="transparent")
+        btn_row.grid(row=1, column=0, sticky="w")
+
+        game_found = self.app.game_found
+
+        self._zone_kick_btn = ctk.CTkButton(
+            btn_row,
+            text="🗡 調整踢人識別區域",
+            width=170,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#1e3a5f",
+            hover_color="#2a4f80",
+            state="normal" if game_found else "disabled",
+            command=self._open_kick_zone_editor,
+        )
+        self._zone_kick_btn.pack(side="left", padx=(0, 10))
+
+        self._zone_visit_btn = ctk.CTkButton(
+            btn_row,
+            text="🌿 調整尋訪清單識別區域",
+            width=170,
+            height=34,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#1e3a5f",
+            hover_color="#2a4f80",
+            state="normal" if game_found else "disabled",
+            command=self._open_visit_zone_editor,
+        )
+        self._zone_visit_btn.pack(side="left")
+
+        self._zone_hint_label = ctk.CTkLabel(
+            inner,
+            text="（請先啟動遊戲）" if not game_found else "",
+            font=ctk.CTkFont(size=11),
+            text_color=CLR_TEXT_DIM,
+            anchor="w",
+        )
+        self._zone_hint_label.grid(row=2, column=0, sticky="w", pady=(6, 0))
+
+    def _refresh_zone_buttons_state(self, found: bool) -> None:
+        """遊戲視窗狀態變更時同步更新按鈕啟用/停用。"""
+        if not hasattr(self, "_zone_kick_btn"):
+            return
+        state = "normal" if found else "disabled"
+        self._zone_kick_btn.configure(state=state)
+        self._zone_visit_btn.configure(state=state)
+        self._zone_hint_label.configure(text="" if found else "（請先啟動遊戲）")
+
+    def _open_kick_zone_editor(self) -> None:
+        from ui.recognition_zone_editor import open_zone_editor
+        open_zone_editor(self, self.app, self.cfg, mode="kick")
+
+    def _open_visit_zone_editor(self) -> None:
+        from ui.recognition_zone_editor import open_zone_editor
+        open_zone_editor(self, self.app, self.cfg, mode="visit")
 
     # ── OCR 測試 Section ────────────────────────────────────────────────────
     def _build_ocr_test_section(self, card: ctk.CTkFrame) -> None:

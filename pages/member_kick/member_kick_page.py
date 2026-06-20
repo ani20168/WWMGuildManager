@@ -197,10 +197,10 @@ class MemberKickPage(BasePage):
         ).grid(row=3, column=0, columnspan=6, sticky="w", padx=14, pady=(0, 4))
 
         filter_row = ctk.CTkFrame(card, fg_color="transparent")
-        filter_row.grid(row=4, column=0, columnspan=6, sticky="w", padx=14, pady=(0, 12))
+        filter_row.grid(row=4, column=0, columnspan=6, sticky="w", padx=14, pady=(0, 8))
 
         ctk.CTkLabel(
-            filter_row, text="貢獻度小於等於：",
+            filter_row, text="貢獻度小於：",
             font=ctk.CTkFont(size=12), text_color=CLR_TEXT,
         ).pack(side="left")
 
@@ -220,9 +220,38 @@ class MemberKickPage(BasePage):
             font=ctk.CTkFont(size=11), text_color=CLR_TEXT_DIM,
         ).pack(side="left", padx=(0, 24))
 
+        # ── 職位白名單 ───────────────────────────────────────────────────────
+        whitelist_row = ctk.CTkFrame(card, fg_color="transparent")
+        whitelist_row.grid(row=5, column=0, columnspan=6, sticky="ew", padx=14, pady=(0, 12))
+
+        ctk.CTkLabel(
+            whitelist_row, text="職位白名單：",
+            font=ctk.CTkFont(size=12), text_color=CLR_TEXT,
+        ).pack(side="left")
+
+        saved_whitelist = self.cfg.get("member_kick.role_whitelist", "")
+        self._whitelist_entry = ctk.CTkEntry(
+            whitelist_row,
+            width=280,
+            font=ctk.CTkFont(size=12),
+            placeholder_text="範例:請假,半步演員,指揮",
+        )
+        self._whitelist_entry.insert(0, str(saved_whitelist))
+        self._whitelist_entry.pack(side="left", padx=(0, 8))
+        self._whitelist_entry.bind("<FocusOut>", lambda _: self._save_whitelist())
+
+        ctk.CTkLabel(
+            whitelist_row, text="（這些職位就算貢獻度不足也不會被踢，用逗號分隔）",
+            font=ctk.CTkFont(size=11), text_color=CLR_TEXT_DIM,
+        ).pack(side="left")
+
+        # 開始/停止按鈕區
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.grid(row=6, column=0, columnspan=6, sticky="w", padx=14, pady=(0, 12))
+
         # 開始/停止按鈕
         self._toggle_btn = ctk.CTkButton(
-            filter_row,
+            btn_row,
             text="▶  開始識別",
             width=120,
             height=34,
@@ -250,7 +279,7 @@ class MemberKickPage(BasePage):
         style = ttk.Style()
         _apply_dark_treeview_style(style, "Kick.Treeview")
 
-        columns = ("name", "contribution", "match")
+        columns = ("name", "role", "contribution", "match")
         self._tree = ttk.Treeview(
             tv_frame,
             columns=columns,
@@ -260,17 +289,19 @@ class MemberKickPage(BasePage):
         )
 
         col_cfg = [
-            ("name",         "玩家名稱",   260, "w"),
-            ("contribution", "本週活躍度", 120, "center"),
-            ("match",        "符合踢出",    90, "center"),
+            ("name",         "玩家名稱",   220, "w"),
+            ("role",         "職位",        90, "center"),
+            ("contribution", "本週活躍度", 110, "center"),
+            ("match",        "符合踢出",    80, "center"),
         ]
         for col_id, heading, width, anchor in col_cfg:
             self._tree.heading(col_id, text=heading)
             self._tree.column(col_id, width=width, anchor=anchor, stretch=(col_id == "name"))
 
-        self._tree.tag_configure("kick",   background=CLR_TABLE_KICK, foreground="#ff8888")
-        self._tree.tag_configure("normal", background=CLR_TABLE_ROW)
-        self._tree.tag_configure("alt",    background=CLR_TABLE_ALT)
+        self._tree.tag_configure("kick",      background=CLR_TABLE_KICK, foreground="#ff8888")
+        self._tree.tag_configure("whitelist", background="#1a2a1a",     foreground="#88dd88")
+        self._tree.tag_configure("normal",    background=CLR_TABLE_ROW)
+        self._tree.tag_configure("alt",       background=CLR_TABLE_ALT)
         self._tree.grid(row=0, column=0, sticky="ew")
 
         self._table_summary_label = ctk.CTkLabel(
@@ -350,6 +381,7 @@ class MemberKickPage(BasePage):
         if not self._validate_filter():
             return
         self._save_filter()
+        self._save_whitelist()
         self.app.toggle_recognition()
         if self.app.recognition_active and self.app.game_hwnd:
             self.after(300, self._focus_game_window)
@@ -409,6 +441,10 @@ class MemberKickPage(BasePage):
         except ValueError:
             pass
 
+    def _save_whitelist(self) -> None:
+        raw = self._whitelist_entry.get().strip()
+        self.cfg.set("member_kick.role_whitelist", raw)
+
     # ── UI 回呼（由背景執行緒透過 after 切回主執行緒）──────────────────────
 
     def _on_players_updated(self, players: list[KickPlayerInfo]) -> None:
@@ -425,22 +461,32 @@ class MemberKickPage(BasePage):
             self._tree.delete(item)
 
         threshold = int(self.cfg.get("member_kick.filter_contribution", 500))
+        whitelist_raw = str(self.cfg.get("member_kick.role_whitelist", ""))
+        whitelist = {r.strip() for r in whitelist_raw.split(",") if r.strip()}
         kick_count = 0
 
         for i, p in enumerate(players):
-            meets = p.contribution >= 0 and p.contribution <= threshold
+            in_whitelist = bool(whitelist and p.role and p.role in whitelist)
+            meets = (not in_whitelist) and (p.contribution >= 0 and p.contribution < threshold)
             if p.meets_filter:
                 meets = True
 
-            tag = "kick" if meets else ("alt" if i % 2 == 0 else "normal")
-            match_text = "🔴 踢出" if meets else "—"
-            if meets:
+            if in_whitelist:
+                tag = "whitelist"
+                match_text = "🛡 白名單"
+            elif meets:
+                tag = "kick"
+                match_text = "🔴 踢出"
                 kick_count += 1
+            else:
+                tag = "alt" if i % 2 == 0 else "normal"
+                match_text = "—"
 
             self._tree.insert(
                 "", "end",
                 values=(
                     p.name if p.name else "（未識別）",
+                    p.role if p.role else "—",
                     str(p.contribution) if p.contribution >= 0 else "—",
                     match_text,
                 ),
@@ -483,6 +529,7 @@ class MemberKickPage(BasePage):
 
     def on_show(self) -> None:
         self._save_filter()
+        self._save_whitelist()
         self._refresh_start_btn_state()
         self._is_active = True
         if self.app.recognition_active:

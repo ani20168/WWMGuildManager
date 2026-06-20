@@ -6,7 +6,7 @@
   1. 截取遊戲視窗畫面
   2. EasyOCR 識別成員列表（玩家名稱、本週活躍度）
   3. 依 Y 座標排序，取最上方第一列玩家
-  4. 若活躍度 ≤ 閾值 → 點擊預定頭像座標 → 等待選單出現（0.8 秒）
+  4. 若活躍度 < 閾值 → 點擊預定頭像座標 → 等待選單出現（0.8 秒）
   5. 模板匹配找「踢出百業」按鈕 → 點擊 → 按 Space 確認 → 等待 2 秒（名單刷新）
   6. 繼續下一輪識別，直到第一位活躍度 > 閾值（所有低活躍度成員已踢完）或找不到玩家
   7. 識別完全結束後呼叫 on_action_taken callback
@@ -48,13 +48,15 @@ KICK_BTN_TEMPLATE = os.path.join(IMAGES_DIR, "kick_button.png")
 Y1R = 0.18   # 跳過 Header 列，從第一筆資料開始
 Y2R = 0.83   # 涵蓋全部成員列，避開底部快捷鍵列
 
-# 欄位 X 邊界（相對於視窗寬度）
+# 欄位 X 邊界（相對於視窗寬度）— 預設值，可由 config 覆寫
 # 實測：
 #   名稱文字 7-18%；職位徽章（社眾/學徒）在 ~21%，需排除
 #   本週活躍度「0」資料中心在 ~48%，欄位大致 44-52%
 #   右側詳情面板等級圖示在 ~68-70%（舊設定 0.61-0.80 誤判為活躍度的根源）
 _COL_NAME_X1         = 0.07
 _COL_NAME_X2         = 0.19   # 緊縮上界，排除職位徽章
+_COL_ROLE_X1         = 0.19   # 職位欄左界（緊接名稱欄）
+_COL_ROLE_X2         = 0.35   # 職位欄右界（社眾/學徒 badge 約在 0.21~0.30）
 _COL_CONTRIBUTION_X1 = 0.40   # 本週活躍度欄左界（加寬以涵蓋「0」字符偏移）
 _COL_CONTRIBUTION_X2 = 0.53   # 本週活躍度欄右界（避免混入「本週俠境通關」欄）
 
@@ -75,6 +77,7 @@ _MAX_RETRY = 3
 @dataclass
 class KickPlayerInfo:
     name: str = ""
+    role: str = ""           # 職位（社眾 / 學徒 / …）
     contribution: int = -1   # -1 = 未識別
     row_y: int = 0
     meets_filter: bool = False
@@ -94,11 +97,29 @@ class MemberKickRecognizer:
         self._kick_template: np.ndarray | None = None
         self._load_templates()
 
+        # 識別區域邊界（可由 config 覆寫，未設定則使用模組常數）
+        self._zones: dict = {}
+        self._load_zones()
+
         # 回呼
         self.on_players_updated: Callable[[list[KickPlayerInfo]], None] | None = None
         self.on_log:             Callable[[str], None] | None = None
         self.on_status:          Callable[[str], None] | None = None
         self.on_action_taken:    Callable[[], None] | None = None  # 點擊頭像後通知 UI 停止
+
+    def _load_zones(self) -> None:
+        """從 config 讀取識別區域邊界比例值（未設定則使用硬編碼預設值）。"""
+        cfg = self._cfg
+        self._zones = {
+            "y1r":              float(cfg.get("kick_zones.y1r",              Y1R)),
+            "y2r":              float(cfg.get("kick_zones.y2r",              Y2R)),
+            "name_x1":          float(cfg.get("kick_zones.name_x1",          _COL_NAME_X1)),
+            "name_x2":          float(cfg.get("kick_zones.name_x2",          _COL_NAME_X2)),
+            "role_x1":          float(cfg.get("kick_zones.role_x1",          _COL_ROLE_X1)),
+            "role_x2":          float(cfg.get("kick_zones.role_x2",          _COL_ROLE_X2)),
+            "contribution_x1":  float(cfg.get("kick_zones.contribution_x1",  _COL_CONTRIBUTION_X1)),
+            "contribution_x2":  float(cfg.get("kick_zones.contribution_x2",  _COL_CONTRIBUTION_X2)),
+        }
 
     def _load_templates(self) -> None:
         if os.path.exists(KICK_BTN_TEMPLATE):
@@ -152,10 +173,10 @@ class MemberKickRecognizer:
     # ── 主迴圈 ───────────────────────────────────────────────────────────────
 
     def _loop(self) -> None:
-        retry_count = 0   # 活躍度讀取失敗連續次數
+        retry_count = 0
 
         while self._running and not self._stop_event.is_set():
-            delay = float(self._cfg.get("recognition_delay", 0.25))
+            delay    = float(self._cfg.get("recognition_delay", 0.25))
             hdr_mode = bool(self._cfg.get("hdr_mode", False))
 
             players = self._scan(hdr_mode)
@@ -167,72 +188,114 @@ class MemberKickRecognizer:
                 self._log("⚠ 未識別到任何玩家，識別結束")
                 break
 
-            # 取 Y 座標最小（最上方）的玩家
             players.sort(key=lambda p: p.row_y)
-            first = players[0]
 
-            threshold = int(self._cfg.get("member_kick.filter_contribution", 500))
+            threshold  = int(self._cfg.get("member_kick.filter_contribution", 500))
+            wl_raw     = str(self._cfg.get("member_kick.role_whitelist", ""))
+            whitelist  = {r.strip() for r in wl_raw.split(",") if r.strip()}
+            avatar_x   = int(self._cfg.get("member_kick.avatar_x", 0))
+            avatar_y   = int(self._cfg.get("member_kick.avatar_y", 0))
+            interval   = int(self._cfg.get("member_kick.avatar_interval", 130))
 
-            self._log(
-                f"📋 第一位：{first.name or '（未識別）'} "
-                f"| 活躍度：{first.contribution if first.contribution >= 0 else '未識別'}"
-            )
-
-            if first.contribution < 0:
-                # 活躍度讀取失敗，重試
-                retry_count += 1
-                if retry_count >= _MAX_RETRY:
-                    self._log(f"⚠ 連續 {_MAX_RETRY} 次無法識別第一位活躍度，停止識別")
-                    break
-                self._log(f"⚠ 活躍度識別失敗，重試（{retry_count}/{_MAX_RETRY}）...")
+            if avatar_x <= 0 or avatar_y <= 0:
+                self._log("❌ 未定義頭像座標，無法執行踢人操作")
                 self._stop_event.wait(timeout=delay)
                 continue
 
-            retry_count = 0
-            first.meets_filter = (first.contribution <= threshold)
+            # ── 掃描前 6 個玩家，跳過白名單，找第一個應踢出目標 ─────────────
+            target_idx:  int | None = None
+            stop_reason: str | None = None
+            all_whitelisted = True
 
-            # 更新篩選狀態後再次通知 UI
+            for idx, p in enumerate(players[:6]):
+                in_wl = bool(whitelist and p.role and p.role in whitelist)
+                if in_wl:
+                    p.meets_filter = False
+                    self._log(
+                        f"🛡 [{idx+1}] {p.name or '（未識別）'} "
+                        f"職位「{p.role}」在白名單，跳過"
+                    )
+                    continue
+
+                all_whitelisted = False
+
+                if p.contribution < 0:
+                    retry_count += 1
+                    if retry_count >= _MAX_RETRY:
+                        stop_reason = (
+                            f"⚠ 連續 {_MAX_RETRY} 次無法識別第 {idx+1} 位活躍度，停止識別"
+                        )
+                    else:
+                        self._log(
+                            f"⚠ 第 {idx+1} 位活躍度識別失敗，"
+                            f"重試（{retry_count}/{_MAX_RETRY}）..."
+                        )
+                    break
+
+                retry_count = 0
+                self._log(
+                    f"📋 [{idx+1}] {p.name or '（未識別）'} "
+                    f"| 職位：{p.role or '未識別'} "
+                    f"| 活躍度：{p.contribution}"
+                )
+
+                if p.contribution >= threshold:
+                    p.meets_filter = False
+                    stop_reason = (
+                        f"✅ [{idx+1}] {p.name or '（未識別）'} "
+                        f"活躍度 {p.contribution} >= {threshold}，無需踢出，識別結束"
+                    )
+                    break
+
+                # 符合踢出條件（contribution < threshold）
+                p.meets_filter = True
+                target_idx = idx
+                break
+
+            if all_whitelisted and target_idx is None and stop_reason is None:
+                stop_reason = "⚠ 前 6 位玩家均在白名單內，停止識別"
+
+            # 通知 UI（更新 meets_filter 後）
             if self.on_players_updated:
                 self.on_players_updated(players)
 
-            if first.meets_filter:
-                avatar_x = int(self._cfg.get("member_kick.avatar_x", 0))
-                avatar_y = int(self._cfg.get("member_kick.avatar_y", 0))
+            if stop_reason is not None:
+                self._log(stop_reason)
+                if "無需踢出" in stop_reason:
+                    self._set_status("已停止（無需踢出）")
+                elif "白名單" in stop_reason:
+                    self._set_status("已停止（全為白名單）")
+                break
 
-                if avatar_x <= 0 or avatar_y <= 0:
-                    self._log("❌ 未定義頭像座標，無法執行踢人操作")
-                    self._stop_event.wait(timeout=delay)
-                    continue
+            if target_idx is None:
+                # 活躍度識別失敗但尚未達重試上限，等待後重試
+                self._stop_event.wait(timeout=delay)
+                continue
 
+            # ── 執行踢出 ─────────────────────────────────────────────────────
+            p = players[target_idx]
+            click_y = avatar_y + target_idx * interval
+
+            self._log(
+                f"🎯 [{target_idx+1}] {p.name or '（未識別）'} "
+                f"活躍度 {p.contribution} < {threshold}，"
+                f"點擊頭像座標 ({avatar_x}, {click_y})..."
+            )
+            pydirectinput.click(avatar_x, click_y)
+            self._log("🖱 已點擊頭像，等待選單出現...")
+
+            self._stop_event.wait(timeout=0.8)
+            if not self._running:
+                break
+
+            kicked = self._click_kick_button()
+            if kicked:
                 self._log(
-                    f"🎯 {first.name or '（未識別）'} 活躍度 {first.contribution} ≤ {threshold}，"
-                    f"點擊頭像座標 ({avatar_x}, {avatar_y})..."
+                    f"✅ 已踢出 {p.name or '（未識別）'}，等待名單刷新（2 秒）..."
                 )
-                pydirectinput.click(avatar_x, avatar_y)
-                self._log("🖱 已點擊頭像，等待選單出現...")
-
-                # 等待選單動畫
-                self._stop_event.wait(timeout=0.8)
-                if not self._running:
-                    break
-
-                # 在遊戲視窗中找「踢出百業」按鈕並點擊
-                kicked = self._click_kick_button()
-                if kicked:
-                    self._log(
-                        f"✅ 已踢出 {first.name or '（未識別）'}，等待名單刷新（2 秒）..."
-                    )
-                    # 等待名單自動刷新，讓下一輪掃描取得更新後的列表
-                    self._stop_event.wait(timeout=2.0)
-                else:
-                    self._log("⚠ 未找到踢出按鈕，請手動確認選單")
-                    break
-
+                self._stop_event.wait(timeout=2.0)
             else:
-                self._log(
-                    f"✅ 第一位活躍度 {first.contribution} > {threshold}，無需踢出，識別結束"
-                )
-                self._set_status("已停止（無需踢出）")
+                self._log("⚠ 未找到踢出按鈕，請手動確認選單")
                 break
 
         self._running = False
@@ -322,6 +385,8 @@ class MemberKickRecognizer:
     # ── 截圖 + OCR ───────────────────────────────────────────────────────────
 
     def _scan(self, hdr_mode: bool) -> list[KickPlayerInfo] | None:
+        self._load_zones()   # 每次掃描前重新讀取 config，以便即時反映調整結果
+
         hwnd = self._app.game_hwnd
         if not hwnd:
             return None
@@ -349,9 +414,11 @@ class MemberKickRecognizer:
         if not self._reader:
             return []
 
+        z = self._zones   # 方便引用
+
         # 裁切至表格區域
-        y1 = int(win_h * Y1R)
-        y2 = int(win_h * Y2R)
+        y1 = int(win_h * z["y1r"])
+        y2 = int(win_h * z["y2r"])
         cropped = img_color[y1:y2, :]
 
         try:
@@ -385,8 +452,10 @@ class MemberKickRecognizer:
             x_ratio = x_mid / win_w
             y_mid = float(pts[:, 1].mean()) + y1   # 還原至視窗座標
 
-            if _COL_NAME_X1 <= x_ratio < _COL_NAME_X2 and conf >= _CONF_NAME:
+            if z["name_x1"] <= x_ratio < z["name_x2"] and conf >= _CONF_NAME:
                 col = "name"
+            elif z["role_x1"] <= x_ratio < z["role_x2"]:
+                col = "role"
             else:
                 continue
             # 注意：contribution 欄位由下方 3x zoom 掃描負責，此處不重複偵測
@@ -403,8 +472,8 @@ class MemberKickRecognizer:
             rows[y_key].append((col, text, conf, x_ratio))
 
         # ── 活躍度欄放大掃描（3x zoom，提升「0」等單字符偵測率）──────────
-        cx1 = int(win_w * _COL_CONTRIBUTION_X1)
-        cx2 = int(win_w * _COL_CONTRIBUTION_X2)
+        cx1 = int(win_w * z["contribution_x1"])
+        cx2 = int(win_w * z["contribution_x2"])
         contrib_col = img_color[y1:y2, cx1:cx2]
         contrib_3x = cv2.resize(contrib_col, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         try:
@@ -433,24 +502,28 @@ class MemberKickRecognizer:
         # ── 組合每列 ────────────────────────────────────────────────────────
         players: list[KickPlayerInfo] = []
         for y_key, items in rows.items():
-            name_parts: list[tuple[float, str]] = []
+            name_parts:    list[tuple[float, str]] = []
+            role_parts:    list[tuple[float, str]] = []
             contrib_parts: list[tuple[float, str]] = []
 
             for col, text, conf, x in items:
                 if col == "name":
                     name_parts.append((x, text))
+                elif col == "role":
+                    role_parts.append((x, text))
                 elif col == "contribution":
                     contrib_parts.append((x, text))
 
-            if not name_parts and not contrib_parts:
+            if not name_parts and not role_parts and not contrib_parts:
                 continue
 
             # 過濾 Header 列（表格欄位標題）
-            all_texts = {t for _, t in name_parts + contrib_parts}
+            all_texts = {t for _, t in name_parts + role_parts + contrib_parts}
             if all_texts & _HEADER_KEYWORDS:
                 continue
 
             name = " ".join(t for _, t in sorted(name_parts)).strip() if name_parts else ""
+            role = " ".join(t for _, t in sorted(role_parts)).strip() if role_parts else ""
 
             contribution = -1
             if contrib_parts:
@@ -461,6 +534,7 @@ class MemberKickRecognizer:
 
             players.append(KickPlayerInfo(
                 name=name,
+                role=role,
                 contribution=contribution,
                 row_y=y_key,
             ))

@@ -41,10 +41,21 @@ PLUS_BTN_TEMPLATE = os.path.join(IMAGES_DIR, "plus_button.png")
 # 刷新最短間隔
 MIN_REFRESH_INTERVAL = 3.0
 
-
 # 識別到的玩家數量低於此值時，不執行邀請（避免 OCR 漏掃就亂邀）
 # 「有效玩家」定義：至少識別出等級（level > 0），名稱不一定需要
 MIN_PLAYERS_BEFORE_ACTION = 7
+
+# ── 表格區域邊界預設值（相對於視窗尺寸）— 可由 config 覆寫 ────────────────
+_Y1R = 0.12
+_Y2R = 0.97
+_COL_NAME_X1  = 0.03
+_COL_NAME_X2  = 0.21
+_COL_LEVEL_X1 = 0.22
+_COL_LEVEL_X2 = 0.33
+_COL_POWER_X1 = 0.30
+_COL_POWER_X2 = 0.48
+_COL_LANG_X1  = 0.61
+_COL_LANG_X2  = 0.83
 
 # 表格標題關鍵字，出現這些字的行直接略過
 _HEADER_KEYWORDS = {"玩家名稱", "等級", "造詣", "線上狀態", "常用語言", "邀請加入", "邀 全"}
@@ -89,6 +100,26 @@ class MemberRecognizer:
         # 模板圖（延遲載入）
         self._plus_template: np.ndarray | None = None
         self._load_templates()
+
+        # 識別區域邊界（可由 config 覆寫）
+        self._zones: dict = {}
+        self._load_zones()
+
+    def _load_zones(self) -> None:
+        """從 config 讀取識別區域邊界比例值（未設定則使用硬編碼預設值）。"""
+        cfg = self._cfg
+        self._zones = {
+            "y1r":      float(cfg.get("visit_zones.y1r",      _Y1R)),
+            "y2r":      float(cfg.get("visit_zones.y2r",      _Y2R)),
+            "name_x1":  float(cfg.get("visit_zones.name_x1",  _COL_NAME_X1)),
+            "name_x2":  float(cfg.get("visit_zones.name_x2",  _COL_NAME_X2)),
+            "level_x1": float(cfg.get("visit_zones.level_x1", _COL_LEVEL_X1)),
+            "level_x2": float(cfg.get("visit_zones.level_x2", _COL_LEVEL_X2)),
+            "power_x1": float(cfg.get("visit_zones.power_x1", _COL_POWER_X1)),
+            "power_x2": float(cfg.get("visit_zones.power_x2", _COL_POWER_X2)),
+            "lang_x1":  float(cfg.get("visit_zones.lang_x1",  _COL_LANG_X1)),
+            "lang_x2":  float(cfg.get("visit_zones.lang_x2",  _COL_LANG_X2)),
+        }
 
     def _load_templates(self) -> None:
         if os.path.exists(PLUS_BTN_TEMPLATE):
@@ -172,6 +203,8 @@ class MemberRecognizer:
 
     # ── 截圖與 OCR ──────────────────────────────────────────────────────────
     def _scan(self, hdr_mode: bool) -> list[PlayerInfo] | None:
+        self._load_zones()   # 每次掃描前重新讀取 config，即時反映調整結果
+
         hwnd = self._app.game_hwnd
         if not hwnd:
             return None
@@ -287,10 +320,11 @@ class MemberRecognizer:
         if not self._reader:
             return []
 
-        # 裁出表格 Y 範圍（跳過表頭；0.97 確保第 7 列不被裁掉）
-        Y1R, Y2R = 0.12, 0.97
-        ty1 = int(win_h * Y1R)
-        ty2 = int(win_h * Y2R)
+        z = self._zones   # 方便引用
+
+        # 裁出表格 Y 範圍（從 config 讀取的邊界）
+        ty1 = int(win_h * z["y1r"])
+        ty2 = int(win_h * z["y2r"])
         table_img = img_color[ty1:ty2, :]
 
         try:
@@ -325,17 +359,17 @@ class MemberRecognizer:
             y_orig = int(cy) + ty1          # 轉回原始座標系
             xr = x_orig / win_w             # x 比例（用於欄位判斷）
 
-            if 0.30 <= xr <= 0.48 and conf >= CONF_THR_POWER:
+            if z["power_x1"] <= xr <= z["power_x2"] and conf >= CONF_THR_POWER:
                 power_words.append((y_orig, x_orig, text))
-            elif 0.22 <= xr <= 0.33 and conf >= CONF_THR_LEVEL:
+            elif z["level_x1"] <= xr <= z["level_x2"] and conf >= CONF_THR_LEVEL:
                 level_words.append((y_orig, x_orig, text))
-            elif 0.03 <= xr <= 0.21 and conf >= CONF_THR_NAME:
+            elif z["name_x1"] <= xr <= z["name_x2"] and conf >= CONF_THR_NAME:
                 name_words.append((y_orig, x_orig, text))
             # 語言欄由下方獨立高倍掃描取代（EasyOCR 對短中文字偵測率低）
 
         # ── 語言欄獨立高倍掃描（3x zoom，提升短中文字偵測率）──────────────
-        lx1 = int(win_w * 0.61)
-        lx2 = int(win_w * 0.83)
+        lx1 = int(win_w * z["lang_x1"])
+        lx2 = int(win_w * z["lang_x2"])
         lang_col = img_color[ty1:ty2, lx1:lx2]
         lang_col_3x = cv2.resize(lang_col, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         try:
