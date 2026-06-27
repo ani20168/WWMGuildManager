@@ -422,7 +422,7 @@ class MemberKickRecognizer:
         cropped = img_color[y1:y2, :]
 
         try:
-            results = self._reader.readtext(cropped)
+            results = self._reader.readtext(cropped, batch_size=int(self._cfg.get("ocr_batch_size", 1)))
         except Exception as e:
             self._log(f"❌ OCR 失敗：{e}")
             return []
@@ -477,7 +477,7 @@ class MemberKickRecognizer:
         contrib_col = img_color[y1:y2, cx1:cx2]
         contrib_3x = cv2.resize(contrib_col, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         try:
-            raw_contrib = self._reader.readtext(contrib_3x, detail=1, paragraph=False)
+            raw_contrib = self._reader.readtext(contrib_3x, detail=1, paragraph=False, batch_size=int(self._cfg.get("ocr_batch_size", 1)))
             for bbox_z, text_z, conf_z in raw_contrib:
                 text_z = text_z.strip()
                 if not text_z:

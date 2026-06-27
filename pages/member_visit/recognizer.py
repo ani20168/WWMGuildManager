@@ -328,7 +328,7 @@ class MemberRecognizer:
         table_img = img_color[ty1:ty2, :]
 
         try:
-            raw = self._reader.readtext(table_img, detail=1, paragraph=False)
+            raw = self._reader.readtext(table_img, detail=1, paragraph=False, batch_size=int(self._cfg.get("ocr_batch_size", 1)))
         except Exception as exc:
             self._log(f"OCR 失敗：{exc}")
             return []
@@ -373,7 +373,7 @@ class MemberRecognizer:
         lang_col = img_color[ty1:ty2, lx1:lx2]
         lang_col_3x = cv2.resize(lang_col, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         try:
-            raw_lang = self._reader.readtext(lang_col_3x, detail=1, paragraph=False)
+            raw_lang = self._reader.readtext(lang_col_3x, detail=1, paragraph=False, batch_size=int(self._cfg.get("ocr_batch_size", 1)))
             for bbox, text, conf in raw_lang:
                 text = text.strip()
                 if not text or conf < CONF_THR_LANG:

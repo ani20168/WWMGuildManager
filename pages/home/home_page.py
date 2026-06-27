@@ -103,6 +103,13 @@ class HomePage(BasePage):
             builder=self._build_zone_adjust_section,
         )
 
+        # ── 模型設定 ────────────────────────────────────────────────────────
+        row = self._build_card(
+            scroll, row,
+            title="模型設定",
+            builder=self._build_model_section,
+        )
+
         # ── OCR 測試 ────────────────────────────────────────────────────────
         row = self._build_card(
             scroll, row,
@@ -486,6 +493,78 @@ class HomePage(BasePage):
         from ui.recognition_zone_editor import open_zone_editor
         open_zone_editor(self, self.app, self.cfg, mode="visit")
 
+    # ── 模型設定 Section ────────────────────────────────────────────────────
+    def _build_model_section(self, card: ctk.CTkFrame) -> None:
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=16, pady=14)
+        inner.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            inner,
+            text="批次大小（batch_size）",
+            font=ctk.CTkFont(size=13),
+            text_color=CLR_TEXT,
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=4, sticky="w")
+
+        ctk.CTkLabel(
+            inner,
+            text="Recognizer 每次處理的文字框數，較大值可提升速度但增加顯示卡記憶體用量",
+            font=ctk.CTkFont(size=11),
+            text_color=CLR_TEXT_DIM,
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(1, 6))
+
+        current_bs = int(self.cfg.get("ocr_batch_size", 1))
+
+        bs_val_label = ctk.CTkLabel(
+            inner,
+            text=str(current_bs),
+            font=ctk.CTkFont(size=12),
+            text_color=CLR_ACCENT,
+            width=70,
+            anchor="e",
+        )
+        bs_val_label.grid(row=2, column=0, sticky="e", padx=(0, 8))
+
+        bs_slider = ctk.CTkSlider(
+            inner,
+            from_=1,
+            to=16,
+            number_of_steps=15,
+            command=lambda v, lbl=bs_val_label: self._on_batch_size_change(v, lbl),
+        )
+        bs_slider.set(current_bs)
+        bs_slider.grid(row=2, column=1, sticky="ew", padx=(0, 8))
+
+        ctk.CTkButton(
+            inner,
+            text="預設",
+            width=56,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color="#2a3040",
+            hover_color="#3a4050",
+            command=lambda s=bs_slider, lbl=bs_val_label: self._reset_batch_size(s, lbl),
+        ).grid(row=2, column=2, padx=(0, 4))
+
+        ctk.CTkLabel(
+            inner,
+            text="(1～16)",
+            font=ctk.CTkFont(size=10),
+            text_color=CLR_TEXT_DIM,
+        ).grid(row=2, column=3, sticky="w")
+
+    def _on_batch_size_change(self, value: float, label: ctk.CTkLabel) -> None:
+        v = max(1, int(round(value)))
+        label.configure(text=str(v))
+        self.cfg.set("ocr_batch_size", v)
+
+    def _reset_batch_size(self, slider: ctk.CTkSlider, label: ctk.CTkLabel) -> None:
+        slider.set(1)
+        label.configure(text="1")
+        self.cfg.set("ocr_batch_size", 1)
+
     # ── OCR 測試 Section ────────────────────────────────────────────────────
     def _build_ocr_test_section(self, card: ctk.CTkFrame) -> None:
         inner = ctk.CTkFrame(card, fg_color="transparent")
@@ -582,16 +661,22 @@ class HomePage(BasePage):
 
             # 步驟 d：讀取測試圖片
             self._ocr_log_from_thread("正在讀取測試圖片...")
+            import time
+            import numpy as np
+            from PIL import Image as _PILImage
             img_path = _external_path(
                 os.path.join("images", "member_kick", "member_list_example.png")
             )
             if not os.path.exists(img_path):
                 raise FileNotFoundError(f"找不到測試圖片：{img_path}")
             self._ocr_log_from_thread(f"圖片路徑：{img_path}")
+            img_array = np.array(_PILImage.open(img_path).convert("RGB"))
+            self._ocr_log_from_thread("圖片已載入，正在識別內容...")
 
-            # 步驟 f：執行 OCR 識別
-            self._ocr_log_from_thread("正在執行 OCR 識別...")
-            results = reader.readtext(img_path, detail=0)
+            # 步驟 f：執行 OCR 識別（此時才開始計時）
+            _t_start = time.perf_counter()
+            results = reader.readtext(img_array, detail=0, batch_size=int(self.cfg.get("ocr_batch_size", 1)))
+            _elapsed = time.perf_counter() - _t_start
 
             # 步驟 h/i：處理結果
             if results:
@@ -600,6 +685,7 @@ class HomePage(BasePage):
                     0, self._ocr_set_status, "✓ OCR 測試成功", CLR_SUCCESS
                 )
                 self._ocr_log_from_thread(f"識別成功，共識別到 {count} 個文字區塊")
+                self._ocr_log_from_thread(f"識別花費時間：{_elapsed:.2f} 秒")
                 preview = results[:5]
                 self._ocr_log_from_thread(f"識別內容（前5項）: {preview}")
             else:
