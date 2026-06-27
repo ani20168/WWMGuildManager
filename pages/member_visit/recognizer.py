@@ -240,11 +240,11 @@ class MemberRecognizer:
         """延遲初始化 EasyOCR Reader（首次識別時執行，約需 5-15 秒）。"""
         if self._reader is not None:
             return
-        self._set_status("正在載入 OCR 模型（首次約需 10 秒）...")
         try:
             import easyocr  # noqa: PLC0415
             import torch as _torch  # noqa: PLC0415
             use_gpu = _torch.cuda.is_available()
+            self._set_status(f"正在載入模型，這需要一點時間...（{'GPU' if use_gpu else 'CPU'}）")
             self._reader = easyocr.Reader(
                 ["ch_tra", "en"],
                 gpu=use_gpu,        # 有 CUDA GPU 就自動啟用

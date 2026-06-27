@@ -163,7 +163,7 @@ class MemberKickRecognizer:
             import torch
             import easyocr
             use_gpu = torch.cuda.is_available()
-            self._log(f"🔧 初始化 EasyOCR（{'GPU' if use_gpu else 'CPU'}）...")
+            self._log(f"🔧 正在載入模型，這需要一點時間...（{'GPU' if use_gpu else 'CPU'}）")
             self._reader = easyocr.Reader(["ch_tra", "en"], gpu=use_gpu, verbose=False)
             self._log("✅ EasyOCR 初始化完成")
         except Exception as e:
@@ -371,8 +371,8 @@ class MemberKickRecognizer:
                 best_loc = loc
                 best_scale = scale
 
-        self._log(f"🔍 踢出按鈕最佳比對分數：{best_val:.3f}")
-        if best_val < 0.38:
+        self._log(f"🔍 踢出按鈕辨識置信度：{best_val:.3f}")
+        if best_val < 0.65:
             return 0, 0
 
         tmpl_w = int(tmpl.shape[1] * best_scale)
