@@ -38,8 +38,8 @@ class MainWindow(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
 
         self.title("WWM Guild Manager")
-        self.geometry("1000x830")
-        self.minsize(800, 710)
+        self.geometry("1000x880")
+        self.minsize(800, 760)
         self.configure(fg_color=CLR_CONTENT_BG)
 
         # 設定視窗圖示

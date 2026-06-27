@@ -413,4 +413,5 @@ class MemberVisitPage(BasePage):
 
     def on_hide(self) -> None:
         self._is_active = False
-        self._recognizer.stop()
+        if self._recognizer._running:
+            self._recognizer.stop()

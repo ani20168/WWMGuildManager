@@ -509,7 +509,7 @@ class HomePage(BasePage):
 
         ctk.CTkLabel(
             inner,
-            text="Recognizer 每次處理的文字框數，較大值可提升速度但增加顯示卡記憶體用量",
+            text="Recognizer 每次處理的文字框數，較大值可提升速度但增加記憶體使用量",
             font=ctk.CTkFont(size=11),
             text_color=CLR_TEXT_DIM,
             anchor="w",
