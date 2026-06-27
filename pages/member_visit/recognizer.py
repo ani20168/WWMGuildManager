@@ -309,8 +309,8 @@ class MemberRecognizer:
         EasyOCR 一次辨識整個表格區域，透過 bounding box x 座標分配至各欄。
 
         策略：
-        1. 裁出表格 Y 範圍（12%–97%），全寬傳給 EasyOCR
-        2. 依 x_ratio 將每個詞分配到 power / level / language / name 欄
+        1. 裁出表格 Y 範圍（12%–97%）＋ X 範圍（只含名稱/等級/造詣欄）
+        2. 依 x_ratio 將每個詞分配到 power / level / name 欄
         3. 以造詣欄（數字，最可靠）建立 7 個 Y 錨點
         4. 逐行匹配其他欄資料，重建 PlayerInfo
         """
@@ -322,10 +322,12 @@ class MemberRecognizer:
 
         z = self._zones   # 方便引用
 
-        # 裁出表格 Y 範圍（從 config 讀取的邊界）
+        # 裁出表格 Y 範圍 + X 範圍（只含名稱、等級、造詣欄；語言欄由下方獨立高倍掃描）
         ty1 = int(win_h * z["y1r"])
         ty2 = int(win_h * z["y2r"])
-        table_img = img_color[ty1:ty2, :]
+        tx1 = max(0,     int(win_w * min(z["name_x1"], z["level_x1"], z["power_x1"])))
+        tx2 = min(win_w, int(win_w * max(z["name_x2"], z["level_x2"], z["power_x2"])))
+        table_img = img_color[ty1:ty2, tx1:tx2]
 
         try:
             raw = self._reader.readtext(table_img, detail=1, paragraph=False, batch_size=int(self._cfg.get("ocr_batch_size", 1)))
@@ -355,8 +357,8 @@ class MemberRecognizer:
             ys = [p[1] for p in bbox]
             cx = sum(xs) / 4
             cy = sum(ys) / 4
-            x_orig = int(cx)
-            y_orig = int(cy) + ty1          # 轉回原始座標系
+            x_orig = int(cx) + tx1          # 還原至視窗座標系
+            y_orig = int(cy) + ty1          # 還原至視窗座標系
             xr = x_orig / win_w             # x 比例（用於欄位判斷）
 
             if z["power_x1"] <= xr <= z["power_x2"] and conf >= CONF_THR_POWER:

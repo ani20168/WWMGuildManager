@@ -416,10 +416,12 @@ class MemberKickRecognizer:
 
         z = self._zones   # 方便引用
 
-        # 裁切至表格區域
+        # 裁切至表格區域（Y 軸 + X 軸：只保留名稱與職位欄，貢獻欄由下方獨立裁切）
         y1 = int(win_h * z["y1r"])
         y2 = int(win_h * z["y2r"])
-        cropped = img_color[y1:y2, :]
+        x_crop_start = max(0,     int(win_w * min(z["name_x1"], z["role_x1"])))
+        x_crop_end   = min(win_w, int(win_w * max(z["name_x2"], z["role_x2"])))
+        cropped = img_color[y1:y2, x_crop_start:x_crop_end]
 
         try:
             results = self._reader.readtext(cropped, batch_size=int(self._cfg.get("ocr_batch_size", 1)))
@@ -449,8 +451,8 @@ class MemberKickRecognizer:
         for (bbox, text, conf) in results:
             pts = np.array(bbox)
             x_mid = float(pts[:, 0].mean())
-            x_ratio = x_mid / win_w
-            y_mid = float(pts[:, 1].mean()) + y1   # 還原至視窗座標
+            x_ratio = (x_mid + x_crop_start) / win_w   # 還原至視窗座標
+            y_mid = float(pts[:, 1].mean()) + y1        # 還原至視窗座標
 
             if z["name_x1"] <= x_ratio < z["name_x2"] and conf >= _CONF_NAME:
                 col = "name"
